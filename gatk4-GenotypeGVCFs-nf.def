@@ -34,20 +34,20 @@ From: ubuntu:18.04
 
 ### scripts: 
 	### samtools & htslib & bcftools
-	wget --no-check-certificate --tries=0 -P /opt https://github.com/samtools/samtools/releases/download/1.12/samtools-1.14.tar.bz2
-	tar -jxv -C /opt -f /opt/samtools-1.12.tar.bz2
-	rm -f /opt/samtools-1.12.tar.bz2
-	cd /opt/samtools-1.12
+	wget --no-check-certificate --tries=0 -P /opt https://github.com/samtools/samtools/releases/download/1.14/samtools-1.14.tar.bz2
+	tar -jxv -C /opt -f /opt/samtools-1.14.tar.bz2
+	rm -f /opt/samtools-1.14.tar.bz2
+	cd /opt/samtools-1.14
 	./configure
 	make
 	make install
 	cd $ROOT_PATH
 	# -> samtools
 
-	wget --no-check-certificate --tries=0 -P /opt https://github.com/samtools/htslib/releases/download/1.12/htslib-1.14.tar.bz2
-	tar -jxv -C /opt -f /opt/htslib-1.12.tar.bz2
-	rm -f /opt/htslib-1.12.tar.bz2
-	cd /opt/htslib-1.12
+	wget --no-check-certificate --tries=0 -P /opt https://github.com/samtools/htslib/releases/download/1.14/htslib-1.14.tar.bz2
+	tar -jxv -C /opt -f /opt/htslib-1.14.tar.bz2
+	rm -f /opt/htslib-1.14.tar.bz2
+	cd /opt/htslib-1.14
 	./configure
 	make
 	make install
