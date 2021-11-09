@@ -1,0 +1,86 @@
+Bootstrap: docker
+
+From: ubuntu:18.04
+
+
+%labels
+	Maintener Maxime Vallée
+	purpose gatk4-GenotypeGVCFs-nf
+# sudo -E /home/chu-lyon.fr/valleema/bin/singularity/bin/singularity build /srv/scratch/valleema/gatk4-GenotypeGVCFs-nf_$(date '+%Y%m%d-%H%M%S').simg /srv/nfs/ngs-stockage/NGS_commun/disnap/bioInfo/Singularity-images/gatk4-GenotypeGVCFs-nf.def
+
+
+
+%files
+	/srv/nfs/ngs-stockage/NGS_Bioinfo/Scripts/GATK3_binaries/3.8.1/GenomeAnalysisTK.jar /opt
+
+
+%post
+	export DEBIAN_FRONTEND=noninteractive
+	export ROOT_PATH=$(pwd)
+	apt-get update
+	apt-get dist-upgrade -y
+	apt update
+
+	### setting to local (required for perl and R) to fr:
+	echo 'export LANGUAGE=C' >> $SINGULARITY_ENVIRONMENT
+	echo 'export LANG=C.UTF-8' >> $SINGULARITY_ENVIRONMENT
+	echo 'export LC_ALL=C.UTF-8' >> $SINGULARITY_ENVIRONMENT
+
+	### general dependencies
+	apt-get install -y build-essential cmake			# -> gnu_make, gcc ; or? apt-get install -y automake make g++
+	apt-get install -y wget unzip
+	apt install -y openjdk-8-jdk						# for all .jar
+
+
+### scripts: 
+	### samtools & htslib & bcftools
+	wget --no-check-certificate --tries=0 -P /opt https://github.com/samtools/samtools/releases/download/1.12/samtools-1.14.tar.bz2
+	tar -jxv -C /opt -f /opt/samtools-1.12.tar.bz2
+	rm -f /opt/samtools-1.12.tar.bz2
+	cd /opt/samtools-1.12
+	./configure
+	make
+	make install
+	cd $ROOT_PATH
+	# -> samtools
+
+	wget --no-check-certificate --tries=0 -P /opt https://github.com/samtools/htslib/releases/download/1.12/htslib-1.14.tar.bz2
+	tar -jxv -C /opt -f /opt/htslib-1.12.tar.bz2
+	rm -f /opt/htslib-1.12.tar.bz2
+	cd /opt/htslib-1.12
+	./configure
+	make
+	make install
+	cd $ROOT_PATH
+	# -> bgzip - tabix
+
+	### GATK4
+	wget --no-check-certificate --tries=0 -P /opt https://github.com/broadinstitute/gatk/releases/download/4.2.3.0/gatk-4.2.3.0.zip
+	unzip /opt/gatk-4.2.3.0.zip -d /opt
+	mv /opt/gatk-4.2.3.0/gatk-package-4.2.3.0-local.jar /opt/gatk4.jar
+	rm -rf /opt/gatk-4.2.3.0.zip /opt/gatk-4.2.3.0/
+	# -> java -jar /opt/gatk4.jar
+
+	### picard
+	wget --no-check-certificate --tries=0 -P /opt https://github.com/broadinstitute/picard/releases/download/2.26.4/picard.jar
+	# -> java -jar /opt/picard.jar
+
+	### cleaning
+	rm -rf /opt/http
+	apt-get purge -y make g++ gcc cmake				# désinstalle les paquets indiqués et leurs fichiers de configuration (not git unzip wget --no-check-certificate, on which R depends)
+	apt-get -y autoremove --purge					# désinstalle toutes les dépendances devenues inutiles et leurs fichiers de configuration
+	apt-get -y clean								# supprime la totalité des paquets présents dans /var/cache/apt/archives
+
+
+%test
+	# Outils
+	samtools --version
+	echo "=== bgzip ==="
+	bgzip --version
+	echo "=== tabix ==="
+	tabix --version
+	echo "=== bcftools ==="
+	echo "=== gatk4 ==="
+	java -jar /opt/gatk4.jar --version
+	echo "=== picard ==="
+	java -jar /opt/picard.jar MarkDuplicates -version || true
