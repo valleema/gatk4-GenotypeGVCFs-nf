@@ -19,12 +19,7 @@ params.help = null
 
 log.info ""
 log.info "-------------------------------------------------------------------------"
-log.info "  gatk4-GenotypeGVCFs v1: Exact Joint Genotyping GATK4 Best Practices         "
-log.info "-------------------------------------------------------------------------"
-log.info "Copyright (C) IARC/WHO"
-log.info "This program comes with ABSOLUTELY NO WARRANTY; for details see LICENSE"
-log.info "This is free software, and you are welcome to redistribute it"
-log.info "under certain conditions; see LICENSE for details."
+log.info "  gatk4-GenotypeGVCFs : Exact Joint Genotyping GATK4 Best Practices         "
 log.info "-------------------------------------------------------------------------"
 log.info ""
 
@@ -41,7 +36,6 @@ if (params.help)
     log.info "--output_dir                    OUTPUT FOLDER             Output for VCF file"
     log.info "--cohort                        STRING                    Cohort name"
     log.info "--ref_fasta                     FASTA FILE                Reference FASTA file"
-    log.info "--gatk_exec                     BIN PATH                  Full path to GATK4 executable"
     log.info "--dbsnp                         VCF FILE                  dbSNP VCF file"
     log.info "--mills                         VCF FILE                  Mills and 1000G gold standard indels VCF file"
     log.info "--axiom                         VCF FILE                  Axiom Exome Plus genotypes all populations poly VCF file"
@@ -58,7 +52,6 @@ params.input         = null
 params.output_dir    = "."
 params.cohort        = "cohort"
 params.ref_fasta     = null
-params.gatk_exec     = null
 params.dbsnp         = null
 params.mills         = null
 params.axiom         = null
@@ -70,14 +63,13 @@ params.onekg         = null
 // Parse Input Parameters
 //
 gvcf_ch = Channel
-			.fromPath(params.input)
+            .fromPath(params.input)
 
 gvcf_idx_ch = Channel
-			.fromPath(params.input)
-			.map { file -> file+".idx" }
+            .fromPath(params.input)
+            .map { file -> file+".tbi" }
 
-			
-GATK                              = params.gatk_exec
+            
 ref                               = file(params.ref_fasta)
 dbsnp_resource_vcf                = file(params.dbsnp)
 mills_resource_vcf                = file(params.mills)
@@ -100,35 +92,35 @@ chromosomes_ch = Channel
 //
 process GenomicsDBImport {
 
-	cpus 1 
+    cpus 8
 
     time { (10.hour + (2.hour * task.attempt)) } // First attempt 12h, second 14h, etc
-    memory { (64.GB + (8.GB * task.attempt)) } // First attempt 72GB, second 80GB, etc
+    // memory { (64.GB + (8.GB * task.attempt)) } // First attempt 72GB, second 80GB, etc
 
     errorStrategy 'retry'
     maxRetries 3
 
-	tag { chr }
+    tag { chr }
 
     input:
-	each chr from chromosomes_ch
+    each chr from chromosomes_ch
     file (gvcf) from gvcf_ch.collect()
-	file (gvcf_idx) from gvcf_idx_ch.collect()
+    file (gvcf_idx) from gvcf_idx_ch.collect()
 
-	output:
+    output:
     set chr, file ("${params.cohort}.${chr}") into gendb_ch
-	
+        
     script:
-	"""
-	${GATK} GenomicsDBImport --java-options "-Xmx24g -Xms24g -Djava.io.tmpdir=/tmp" \
-	${gvcf.collect { "-V $it " }.join()} \
+    """
+    java -Xmx24g -Xms24g -Djava.io.tmpdir=/tmp -jar /opt/gatk4.jar GenomicsDBImport \
+    ${gvcf.collect { "-V $it " }.join()} \
     -L ${chr} \
     --batch-size 50 \
-    --tmp-dir=/tmp \
-	--genomicsdb-workspace-path ${params.cohort}.${chr}
-	
-	"""
-}	
+    --tmp-dir /tmp \
+    --genomicsdb-workspace-path ${params.cohort}.${chr}
+        
+    """
+}   
 
 
 //
@@ -136,47 +128,46 @@ process GenomicsDBImport {
 //
 process GenotypeGVCFs {
 
-	cpus 4 
-	memory '48 GB'
-	time '20h'
-	
-	tag { chr }
+    cpus 4 
+    // memory '48 GB'
+    time '20h'
+        
+    tag { chr }
 
-	publishDir params.output_dir, mode: 'copy', pattern: '*.{vcf,idx}'
+    publishDir params.output_dir, mode: 'copy', pattern: '*.{vcf,idx}'
 
     input:
-	set chr, file (workspace) from gendb_ch
-   	file genome from ref
+    set chr, file (workspace) from gendb_ch
+    file genome from ref
 
-	output:
+    output:
     set chr, file("${params.cohort}.${chr}.vcf"), file("${params.cohort}.${chr}.vcf.idx") into vcf_ch
     file "${genome}.fai" into faidx_sid_ch,faidx_snv_ch
-	file "${genome.baseName}.dict" into dict_sid_ch,dict_snv_ch
+    file "${genome.baseName}.dict" into dict_sid_ch,dict_snv_ch
 
     script:
-	"""
+    """
     samtools faidx ${genome}
 
-    java -jar \$PICARD_TOOLS_LIBDIR/picard.jar \
-    CreateSequenceDictionary \
-    R=${genome} \
-    O=${genome.baseName}.dict
+    java -jar /opt/picard.jar \
+        CreateSequenceDictionary \
+        R=${genome} \
+        O=${genome.baseName}.dict
 
     WORKSPACE=\$( basename ${workspace} )
 
-    ${GATK} --java-options "-Xmx5g -Xms5g" \
-     GenotypeGVCFs \
-     -R ${genome} \
-     -O ${params.cohort}.${chr}.vcf \
-     -D ${dbsnp_resource_vcf} \
-     -G StandardAnnotation \
-     --only-output-calls-starting-in-intervals \
-     --use-new-qual-calculator \
-     -V gendb://\$WORKSPACE \
-     -L ${chr}
-
-	"""
-}	
+    java -Xmx5g -Xms5g -jar /opt/gatk4.jar \
+        GenotypeGVCFs \
+        -R ${genome} \
+        -O ${params.cohort}.${chr}.vcf \
+        -D ${dbsnp_resource_vcf} \
+        -G StandardAnnotation \
+        --only-output-calls-starting-in-intervals \
+        --use-new-qual-calculator \
+        -V gendb://\$WORKSPACE \
+        -L ${chr}
+    """
+}   
 
 
 //
@@ -184,52 +175,51 @@ process GenotypeGVCFs {
 //
 process HardFilter {
 
-	cpus 1
-	memory '24 GB'
-	time '12h'
-	
-	tag { chr }
+    cpus 1
+    // memory '24 GB'
+    time '12h'
+        
+    tag { chr }
 
     input:
-	set chr, file (vcf), file (vcfidx) from vcf_ch
+    set chr, file (vcf), file (vcfidx) from vcf_ch
 
-	output:
+    output:
     file("${params.cohort}.${chr}.filtered.vcf") into (vcf_hf_ch)
     file("${params.cohort}.${chr}.filtered.vcf.idx") into (vcf_idx_hf_ch)
 
     script:
-	"""
-	${GATK} --java-options "-Xmx3g -Xms3g" \
-      VariantFiltration \
-      --filter-expression "ExcessHet > ${excess_het_threshold}" \
-      --filter-name ExcessHet \
-      -V ${vcf} \
-      -O ${params.cohort}.${chr}.markfiltered.vcf
+    """
+    java -Xmx3g -Xms3g -jar /opt/gatk4.jar \
+        VariantFiltration \
+        --filter-expression "ExcessHet > ${excess_het_threshold}" \
+        --filter-name ExcessHet \
+        -V ${vcf} \
+        -O ${params.cohort}.${chr}.markfiltered.vcf
 
-	${GATK} --java-options "-Xmx3g -Xms3g" \
-      SelectVariants \
-      --exclude-filtered \
-      -V ${params.cohort}.${chr}.markfiltered.vcf \
-      -O ${params.cohort}.${chr}.filtered.vcf
-
-	"""
-}	
+    java -Xmx3g -Xms3g -jar /opt/gatk4.jar \
+        SelectVariants \
+        --exclude-filtered \
+        -V ${params.cohort}.${chr}.markfiltered.vcf \
+        -O ${params.cohort}.${chr}.filtered.vcf
+    """
+}   
 
 
 
 process GatherVcfs {
 
-	cpus 1
-	memory '48 GB'
-	time '12h'
-	
-	tag "${params.cohort}"
+    cpus 1
+    // memory '48 GB'
+    time '12h'
+        
+    tag "${params.cohort}"
 
     input:
     file (vcf) from vcf_hf_ch.collect()
-	file (vcf_idx) from vcf_idx_hf_ch.collect()
+    file (vcf_idx) from vcf_idx_hf_ch.collect()
 
-	output:
+    output:
     set file("${params.cohort}.vcf"), file("${params.cohort}.vcf.idx") into (vcf_snv_ch, vcf_sid_ch, vcf_recal_ch)
 
     // WARNING : complicated channel extraction! 
@@ -242,14 +232,13 @@ process GatherVcfs {
     // 6 : Add chrX and chrY to the list
 
     script:
-	"""
-	${GATK} --java-options "-Xmx3g -Xms3g" \
-      GatherVcfs \
-      ${vcf.findAll{ it=~/chr\d+/ }.collect().sort{ it.name.tokenize('.')[1].substring(3).toInteger() }.plus(vcf.find{ it=~/chrX/ }).plus(vcf.find{ it=~/chrY/ }).collect{ "--INPUT $it " }.join() } \
-      --OUTPUT ${params.cohort}.vcf
-
-	"""
-}	
+    """
+    java -Xmx3g -Xms3g -jar /opt/gatk4.jar \
+        GatherVcfs \
+        ${vcf.findAll{ it=~/chr\d+/ }.collect().sort{ it.name.tokenize('.')[1].substring(3).toInteger() }.plus(vcf.find{ it=~/chrX/ }).plus(vcf.find{ it=~/chrY/ }).collect{ "--INPUT $it " }.join() } \
+        --OUTPUT ${params.cohort}.vcf
+    """
+}
 
 
 
@@ -258,39 +247,38 @@ process GatherVcfs {
 //
 process SID_VariantRecalibrator {
 
-	cpus 1
-	memory '24 GB'
-	time '12h'
-	
-	tag "${params.cohort}"
+    cpus 1
+    // memory '24 GB'
+    time '12h'
+        
+    tag "${params.cohort}"
 
     input:
-	set file (vcf), file (vcfidx) from vcf_sid_ch
+    set file (vcf), file (vcfidx) from vcf_sid_ch
     file genome from ref
     file faidx from faidx_sid_ch
     file dict from dict_sid_ch
 
-	output:
+    output:
     set file("${params.cohort}.sid.recal"),file("${params.cohort}.sid.recal.idx"),file("${params.cohort}.sid.tranches") into sid_recal_ch
 
     script:
-	"""
-    ${GATK} --java-options "-Xmx24g -Xms24g" \
-      VariantRecalibrator \
-      -R ${genome} \
-      -V ${vcf} \
-      --output ${params.cohort}.sid.recal \
-      --tranches-file ${params.cohort}.sid.tranches \
-      --trust-all-polymorphic \
-      -an QD -an DP -an FS -an SOR -an ReadPosRankSum -an MQRankSum -an InbreedingCoeff \
-      -mode INDEL \
-      --max-gaussians 4 \
-      -resource mills,known=false,training=true,truth=true,prior=12:${mills_resource_vcf} \
-      -resource axiomPoly,known=false,training=true,truth=false,prior=10:${axiomPoly_resource_vcf} \
-      -resource dbsnp,known=true,training=false,truth=false,prior=2:${dbsnp_resource_vcf}
-	
-	"""
-}	
+    """
+    java -Xmx24g -Xms24g -jar /opt/gatk4.jar \
+        VariantRecalibrator \
+        -R ${genome} \
+        -V ${vcf} \
+        --output ${params.cohort}.sid.recal \
+        --tranches-file ${params.cohort}.sid.tranches \
+        --trust-all-polymorphic \
+        -an QD -an DP -an FS -an SOR -an ReadPosRankSum -an MQRankSum -an InbreedingCoeff \
+        -mode INDEL \
+        --max-gaussians 4 \
+        -resource mills,known=false,training=true,truth=true,prior=12:${mills_resource_vcf} \
+        -resource axiomPoly,known=false,training=true,truth=false,prior=10:${axiomPoly_resource_vcf} \
+        -resource dbsnp,known=true,training=false,truth=false,prior=2:${dbsnp_resource_vcf}
+    """
+}   
 
 
 
@@ -299,40 +287,39 @@ process SID_VariantRecalibrator {
 //
 process SNV_VariantRecalibrator {
 
-	cpus 1
-	memory '90 GB'
-	time '12h'
-	
-	tag "${params.cohort}"
+    cpus 1
+    // memory '90 GB'
+    time '12h'
+        
+    tag "${params.cohort}"
 
     input:
-	set file (vcf), file (vcfidx) from vcf_snv_ch
+    set file (vcf), file (vcfidx) from vcf_snv_ch
     file genome from ref
     file faidx from faidx_snv_ch
     file dict from dict_snv_ch
 
-	output:
+    output:
     set file("${params.cohort}.snv.recal"),file("${params.cohort}.snv.recal.idx"),file("${params.cohort}.snv.tranches") into snv_recal_ch
 
     script:
-	"""
-    ${GATK} --java-options "-Xmx90g -Xms90g" \
-      VariantRecalibrator \
-      -R ${genome} \
-      -V ${vcf} \
-      --output ${params.cohort}.snv.recal \
-      --tranches-file ${params.cohort}.snv.tranches \
-      --trust-all-polymorphic \
-      -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -an InbreedingCoeff \
-      -mode SNP \
-      --max-gaussians 6 \
-      -resource hapmap,known=false,training=true,truth=true,prior=15:${hapmap_resource_vcf} \
-      -resource omni,known=false,training=true,truth=true,prior=12:${omni_resource_vcf} \
-      -resource 1000G,known=false,training=true,truth=false,prior=10:${one_thousand_genomes_resource_vcf} \
-      -resource dbsnp,known=true,training=false,truth=false,prior=7:${dbsnp_resource_vcf}
-	
-	"""
-}	
+    """
+    java -Xmx90g -Xms90g -jar /opt/gatk4.jar \
+        VariantRecalibrator \
+        -R ${genome} \
+        -V ${vcf} \
+        --output ${params.cohort}.snv.recal \
+        --tranches-file ${params.cohort}.snv.tranches \
+        --trust-all-polymorphic \
+        -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -an InbreedingCoeff \
+        -mode SNP \
+        --max-gaussians 6 \
+        -resource hapmap,known=false,training=true,truth=true,prior=15:${hapmap_resource_vcf} \
+        -resource omni,known=false,training=true,truth=true,prior=12:${omni_resource_vcf} \
+        -resource 1000G,known=false,training=true,truth=false,prior=10:${one_thousand_genomes_resource_vcf} \
+        -resource dbsnp,known=true,training=false,truth=false,prior=7:${dbsnp_resource_vcf}
+    """
+}
 
 
 
@@ -341,48 +328,47 @@ process SNV_VariantRecalibrator {
 //
 process ApplyRecalibration {
 
-	cpus 1 
-	memory '7 GB'
-	time '12h'
-	
-	tag "${params.cohort}"
+    cpus 1 
+    // memory '7 GB'
+    time '12h'
 
-	publishDir params.output_dir, mode: 'copy'
+    tag "${params.cohort}"
+
+    publishDir params.output_dir, mode: 'copy'
 
     input:
-	set file (input_vcf), file (input_vcf_idx) from vcf_recal_ch
-	set file (indels_recalibration), file (indels_recalibration_idx), file (indels_tranches) from sid_recal_ch
-	set file (snps_recalibration), file (snps_recalibration_idx), file (snps_tranches) from snv_recal_ch
+    set file (input_vcf), file (input_vcf_idx) from vcf_recal_ch
+    set file (indels_recalibration), file (indels_recalibration_idx), file (indels_tranches) from sid_recal_ch
+    set file (snps_recalibration), file (snps_recalibration_idx), file (snps_tranches) from snv_recal_ch
 
-	output:
+    output:
     set file("${params.cohort}.recalibrated.vcf"),file("${params.cohort}.recalibrated.vcf.idx") into vcf_final_ch
 
     script:
-	"""
-    ${GATK} --java-options "-Xmx5g -Xms5g" \
-      ApplyVQSR \
-      -O tmp.indel.recalibrated.vcf \
-      -V ${input_vcf} \
-      --recal-file ${indels_recalibration} \
-      --tranches-file ${indels_tranches} \
-      --truth-sensitivity-filter-level 99.0 \
-      --exclude-filtered \
-      --create-output-variant-index true \
-      -mode INDEL
+    """
+    java -Xmx5g -Xms5g -jar /opt/gatk4.jar \
+        ApplyVQSR \
+        -O tmp.indel.recalibrated.vcf \
+        -V ${input_vcf} \
+        --recal-file ${indels_recalibration} \
+        --tranches-file ${indels_tranches} \
+        --truth-sensitivity-filter-level 99.0 \
+        --exclude-filtered \
+        --create-output-variant-index true \
+        -mode INDEL
 
-    ${GATK} --java-options "-Xmx5g -Xms5g" \
-      ApplyVQSR \
-      -O ${params.cohort}.recalibrated.vcf \
-      -V tmp.indel.recalibrated.vcf \
-      --recal-file ${snps_recalibration} \
-      --tranches-file ${snps_tranches} \
-      --truth-sensitivity-filter-level 99.5 \
-      --exclude-filtered \
-      --create-output-variant-index true \
-      -mode SNP
-		
-	"""
-}	
+    java -Xmx5g -Xms5g -jar /opt/gatk4.jar \
+        ApplyVQSR \
+        -O ${params.cohort}.recalibrated.vcf \
+        -V tmp.indel.recalibrated.vcf \
+        --recal-file ${snps_recalibration} \
+        --tranches-file ${snps_tranches} \
+        --truth-sensitivity-filter-level 99.5 \
+        --exclude-filtered \
+        --create-output-variant-index true \
+        -mode SNP
+    """
+}   
 
 
 

@@ -75,12 +75,12 @@ From: ubuntu:18.04
 
 %test
 	# Outils
+	echo "=== samtools ==="
 	samtools --version
 	echo "=== bgzip ==="
 	bgzip --version
 	echo "=== tabix ==="
 	tabix --version
-	echo "=== bcftools ==="
 	echo "=== gatk4 ==="
 	java -jar /opt/gatk4.jar --version
 	echo "=== picard ==="
