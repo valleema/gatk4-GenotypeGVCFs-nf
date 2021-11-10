@@ -247,7 +247,7 @@ process GatherVcfs {
 //
 process SID_VariantRecalibrator {
 
-    cpus 1
+    cpus 4
     // memory '24 GB'
     time '12h'
         
@@ -256,8 +256,8 @@ process SID_VariantRecalibrator {
     input:
     set file (vcf), file (vcfidx) from vcf_sid_ch
     file genome from ref
-    file faidx from faidx_sid_ch
-    file dict from dict_sid_ch
+    file faidx from faidx_sid_ch.first()
+    file dict from dict_sid_ch.first()
 
     output:
     set file("${params.cohort}.sid.recal"),file("${params.cohort}.sid.recal.idx"),file("${params.cohort}.sid.tranches") into sid_recal_ch
@@ -274,9 +274,9 @@ process SID_VariantRecalibrator {
         -an QD -an DP -an FS -an SOR -an ReadPosRankSum -an MQRankSum -an InbreedingCoeff \
         -mode INDEL \
         --max-gaussians 4 \
-        -resource mills,known=false,training=true,truth=true,prior=12:${mills_resource_vcf} \
-        -resource axiomPoly,known=false,training=true,truth=false,prior=10:${axiomPoly_resource_vcf} \
-        -resource dbsnp,known=true,training=false,truth=false,prior=2:${dbsnp_resource_vcf}
+        --resource:mills,known=false,training=true,truth=true,prior=12 ${mills_resource_vcf} \
+        --resource:axiomPoly,known=false,training=true,truth=false,prior=10 ${axiomPoly_resource_vcf} \
+        --resource:dbsnp,known=true,training=false,truth=false,prior=2 ${dbsnp_resource_vcf}
     """
 }   
 
@@ -287,7 +287,7 @@ process SID_VariantRecalibrator {
 //
 process SNV_VariantRecalibrator {
 
-    cpus 1
+    cpus 8
     // memory '90 GB'
     time '12h'
         
@@ -296,8 +296,8 @@ process SNV_VariantRecalibrator {
     input:
     set file (vcf), file (vcfidx) from vcf_snv_ch
     file genome from ref
-    file faidx from faidx_snv_ch
-    file dict from dict_snv_ch
+    file faidx from faidx_snv_ch.first()
+    file dict from dict_snv_ch.first()
 
     output:
     set file("${params.cohort}.snv.recal"),file("${params.cohort}.snv.recal.idx"),file("${params.cohort}.snv.tranches") into snv_recal_ch
@@ -314,10 +314,10 @@ process SNV_VariantRecalibrator {
         -an QD -an MQ -an MQRankSum -an ReadPosRankSum -an FS -an SOR -an DP -an InbreedingCoeff \
         -mode SNP \
         --max-gaussians 6 \
-        -resource hapmap,known=false,training=true,truth=true,prior=15:${hapmap_resource_vcf} \
-        -resource omni,known=false,training=true,truth=true,prior=12:${omni_resource_vcf} \
-        -resource 1000G,known=false,training=true,truth=false,prior=10:${one_thousand_genomes_resource_vcf} \
-        -resource dbsnp,known=true,training=false,truth=false,prior=7:${dbsnp_resource_vcf}
+        --resource:hapmap,known=false,training=true,truth=true,prior=15 ${hapmap_resource_vcf} \
+        --resource:omni,known=false,training=true,truth=true,prior=12 ${omni_resource_vcf} \
+        --resource:1000G,known=false,training=true,truth=false,prior=10 ${one_thousand_genomes_resource_vcf} \
+        --resource:dbsnp,known=true,training=false,truth=false,prior=7 ${dbsnp_resource_vcf}
     """
 }
 
