@@ -10,10 +10,6 @@ From: ubuntu:18.04
 
 
 
-%files
-	/srv/nfs/ngs-stockage/NGS_Bioinfo/Scripts/GATK3_binaries/3.8.1/GenomeAnalysisTK.jar /opt
-
-
 %post
 	export DEBIAN_FRONTEND=noninteractive
 	export ROOT_PATH=$(pwd)
